@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iniciar sesión – GestionApp</title>
+  <link rel="stylesheet" href="design.css">
+</head>
+<body>
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="logo">Gestion<span>App</span></div>
+
+    <div id="alert" class="alert alert-error"></div>
+
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="correo">Correo electrónico</label>
+        <input type="email" id="correo" placeholder="tu@correo.com" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Contraseña</label>
+        <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary w-full mt-1" id="submitBtn">
+        Iniciar sesión
+      </button>
+    </form>
+
+    <p class="text-center mt-3 text-sm" style="color:var(--txt3)">
+      ¿No tienes cuenta?
+      <a href="registro.html" class="link">Regístrate aquí</a>
+    </p>
+  </div>
+</div>
+
+<script src="api.js"></script>
+<script>
+  // Si ya hay sesión activa redirigir
+  (function() {
+    const token = localStorage.getItem('token');
+    const rol   = localStorage.getItem('rol');
+    if (token) {
+      window.location.href = rol === 'admin' ? 'admin.html' : 'dashboard.html';
+    }
+  })();
+
+  const form      = document.getElementById('loginForm');
+  const alertEl   = document.getElementById('alert');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showError(msg) {
+    alertEl.textContent = msg;
+    alertEl.className = 'alert alert-error show';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    alertEl.className = 'alert';
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Entrando…';
+
+    try {
+      const data = await api.login(
+        document.getElementById('correo').value.trim(),
+        document.getElementById('password').value
+      );
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('rol',   data.rol);
+      window.location.href = data.rol === 'admin' ? 'admin.html' : 'dashboard.html';
+    } catch (err) {
+      showError(err.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Iniciar sesión';
+    }
+  });
+</script>
+</body>
+</html>

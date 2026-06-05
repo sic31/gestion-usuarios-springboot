@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel Admin – GestionApp</title>
+  <link rel="stylesheet" href="design.css">
+</head>
+<body>
+
+<!-- ── Navbar ── -->
+<nav class="navbar">
+  <a class="brand" href="admin.html">Gestion<span>App</span></a>
+  <span style="margin-left:.5rem;font-size:.78rem" class="badge admin">admin</span>
+  <span class="spacer"></span>
+  <span id="adminName" style="color:var(--txt2);font-size:.9rem;margin-right:.5rem"></span>
+  <button class="nav-btn" id="logoutBtn">Cerrar sesión</button>
+</nav>
+
+<!-- ── Main ── -->
+<main class="page">
+
+  <div class="section-header">
+    <div>
+      <h2>Gestión de usuarios</h2>
+      <p style="margin-top:.2rem;font-size:.9rem">Administra todos los usuarios del sistema</p>
+    </div>
+    <button class="btn btn-primary" id="createUserBtn">＋ Nuevo usuario</button>
+  </div>
+
+  <!-- Search -->
+  <div class="search-row mt-2" style="margin-bottom:1.2rem">
+    <input type="text" id="searchInput" placeholder="🔍  Buscar por nombre o correo…">
+  </div>
+
+  <div id="pageAlert" class="alert" style="margin-bottom:1rem"></div>
+
+  <!-- Table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Nombre</th>
+          <th>Correo</th>
+          <th>Rol</th>
+          <th>Estado</th>
+          <th>Registro</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody id="usersBody">
+        <tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--txt3)">Cargando…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+<!-- ── Modal crear/editar usuario ── -->
+<div class="modal-backdrop" id="userModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Nuevo usuario</h3>
+      <button class="modal-close" id="closeUserModal">✕</button>
+    </div>
+
+    <div id="modalAlert" class="alert" style="margin-bottom:1rem"></div>
+
+    <form id="userForm" style="display:flex;flex-direction:column;gap:1rem">
+      <input type="hidden" id="editUserId">
+      <div class="form-group">
+        <label>Nombre</label>
+        <input type="text" id="editNombre" placeholder="Nombre completo" required>
+      </div>
+      <div class="form-group">
+        <label>Correo</label>
+        <input type="email" id="editCorreo" placeholder="correo@ejemplo.com" required>
+      </div>
+      <div class="form-group">
+        <label>Contraseña <span id="pwdHint" style="color:var(--txt3)">(mín. 6 caracteres)</span></label>
+        <input type="password" id="editPassword" placeholder="••••••••" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label>Rol</label>
+        <select id="editRol">
+          <option value="usuario">Usuario</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="modal-footer" style="margin-top:0">
+        <button type="button" class="btn btn-secondary" id="cancelUserModal">Cancelar</button>
+        <button type="submit" class="btn btn-primary" id="saveUserBtn">Guardar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ── Modal confirmar eliminar ── -->
+<div class="modal-backdrop" id="deleteModal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h3>¿Eliminar usuario?</h3>
+      <button class="modal-close" id="closeDeleteModal">✕</button>
+    </div>
+    <p>Esta acción es irreversible. El usuario <strong id="deleteUserName"></strong> será eliminado del sistema.</p>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="cancelDelete">Cancelar</button>
+      <button class="btn btn-danger" id="confirmDelete">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<script src="api.js"></script>
+<script>
+// ── Auth guard ──
+const token = localStorage.getItem('token');
+const rol   = localStorage.getItem('rol');
+if (!token)           { window.location.href = 'login.html'; }
+if (rol !== 'admin')  { window.location.href = 'dashboard.html'; }
+
+// ── State ──
+let allUsers    = [];
+let currentAdminId = null;
+let pendingDeleteId = null;
+
+// ── Helpers ──
+function fmtDate(s) {
+  if (!s) return '—';
+  return new Date(s).toLocaleDateString('es-CO', { day:'2-digit', month:'short', year:'numeric' });
+}
+function showPageAlert(msg, type = 'error') {
+  const el = document.getElementById('pageAlert');
+  el.textContent = msg;
+  el.className = `alert alert-${type} show`;
+  setTimeout(() => { el.className = 'alert'; }, 4000);
+}
+function showModalAlert(msg, type = 'error') {
+  const el = document.getElementById('modalAlert');
+  el.textContent = msg;
+  el.className = `alert alert-${type} show`;
+}
+
+// ── Load admin info ──
+async function loadAdmin() {
+  try {
+    const me = await api.getMe();
+    document.getElementById('adminName').textContent = me.nombre;
+    currentAdminId = me.id;
+  } catch(e) {}
+}
+
+// ── Load users ──
+async function loadUsers() {
+  try {
+    allUsers = await api.getAllUsers();
+    renderUsers(allUsers);
+  } catch(e) {
+    document.getElementById('usersBody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--danger)">${e.message}</td></tr>`;
+  }
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('usersBody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:2rem;color:var(--txt3)">Sin usuarios encontrados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map((u, i) => `
+    <tr>
+      <td style="color:var(--txt3)">${i + 1}</td>
+      <td><strong>${u.nombre}</strong></td>
+      <td>${u.correo}</td>
+      <td><span class="badge ${u.rol}">${u.rol}</span></td>
+      <td><span class="badge ${u.estado}">${u.estado}</span></td>
+      <td>${fmtDate(u.fechaRegistro)}</td>
+      <td>
+        <div class="flex gap-1 items-center">
+          <button class="btn btn-secondary btn-sm" onclick="openEditModal(${u.id})">✏️ Editar</button>
+          ${u.id !== currentAdminId
+            ? `<button class="btn btn-danger btn-sm" onclick="openDeleteModal(${u.id}, '${u.nombre.replace(/'/g,"\\'")}')">🗑️</button>`
+            : '<span class="text-sm" style="color:var(--txt3)">— tú —</span>'}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+// ── Search ──
+document.getElementById('searchInput').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  renderUsers(allUsers.filter(u =>
+    u.nombre.toLowerCase().includes(q) || u.correo.toLowerCase().includes(q)
+  ));
+});
+
+// ── User modal ──
+const userModal = document.getElementById('userModal');
+
+function openCreateModal() {
+  document.getElementById('modalTitle').textContent = 'Nuevo usuario';
+  document.getElementById('editUserId').value   = '';
+  document.getElementById('editNombre').value   = '';
+  document.getElementById('editCorreo').value   = '';
+  document.getElementById('editPassword').value = '';
+  document.getElementById('editRol').value      = 'usuario';
+  document.getElementById('editPassword').required = true;
+  document.getElementById('pwdHint').textContent = '(mín. 6 caracteres)';
+  document.getElementById('modalAlert').className = 'alert';
+  userModal.classList.add('open');
+}
+
+function openEditModal(id) {
+  const u = allUsers.find(x => x.id === id);
+  if (!u) return;
+  document.getElementById('modalTitle').textContent = 'Editar usuario';
+  document.getElementById('editUserId').value   = u.id;
+  document.getElementById('editNombre').value   = u.nombre;
+  document.getElementById('editCorreo').value   = u.correo;
+  document.getElementById('editPassword').value = '';
+  document.getElementById('editRol').value      = u.rol;
+  document.getElementById('editPassword').required = false;
+  document.getElementById('pwdHint').textContent = '(dejar vacío para no cambiar)';
+  document.getElementById('modalAlert').className = 'alert';
+  userModal.classList.add('open');
+}
+
+function closeUserModal() { userModal.classList.remove('open'); }
+document.getElementById('closeUserModal').addEventListener('click', closeUserModal);
+document.getElementById('cancelUserModal').addEventListener('click', closeUserModal);
+userModal.addEventListener('click', (e) => { if (e.target === userModal) closeUserModal(); });
+document.getElementById('createUserBtn').addEventListener('click', openCreateModal);
+
+document.getElementById('userForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('saveUserBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  document.getElementById('modalAlert').className = 'alert';
+
+  const id  = document.getElementById('editUserId').value;
+  const payload = {
+    nombre:   document.getElementById('editNombre').value.trim(),
+    correo:   document.getElementById('editCorreo').value.trim(),
+    password: document.getElementById('editPassword').value || undefined,
+    rol:      document.getElementById('editRol').value,
+  };
+
+  try {
+    if (id) {
+      await api.updateUser(id, payload);
+      showPageAlert('Usuario actualizado correctamente', 'success');
+    } else {
+      if (!payload.password) { showModalAlert('La contraseña es obligatoria'); return; }
+      await api.createUser(payload);
+      showPageAlert('Usuario creado correctamente', 'success');
+    }
+    closeUserModal();
+    await loadUsers();
+  } catch (err) {
+    showModalAlert(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+  }
+});
+
+// ── Delete modal ──
+const deleteModal = document.getElementById('deleteModal');
+
+function openDeleteModal(id, name) {
+  pendingDeleteId = id;
+  document.getElementById('deleteUserName').textContent = name;
+  deleteModal.classList.add('open');
+}
+function closeDeleteModal() { deleteModal.classList.remove('open'); pendingDeleteId = null; }
+document.getElementById('closeDeleteModal').addEventListener('click', closeDeleteModal);
+document.getElementById('cancelDelete').addEventListener('click', closeDeleteModal);
+deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
+
+document.getElementById('confirmDelete').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  try {
+    await api.deleteUser(pendingDeleteId);
+    closeDeleteModal();
+    showPageAlert('Usuario eliminado', 'success');
+    await loadUsers();
+  } catch (err) {
+    closeDeleteModal();
+    showPageAlert(err.message);
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  localStorage.clear();
+  window.location.href = 'login.html';
+});
+
+// ── Init ──
+loadAdmin();
+loadUsers();
+</script>
+</body>
+</html>

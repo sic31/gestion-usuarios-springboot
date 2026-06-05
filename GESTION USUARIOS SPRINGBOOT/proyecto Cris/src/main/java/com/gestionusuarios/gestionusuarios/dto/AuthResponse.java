@@ -1,0 +1,14 @@
+package com.gestionusuarios.gestionusuarios.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+public class AuthResponse {
+    private String token;
+    private String rol;
+    private String mensaje;
+}
